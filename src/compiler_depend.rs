@@ -1,22 +1,27 @@
 //! A small module to parse CMake `compiler_depend.make` files
 
 use regex::RegexBuilder;
+use thiserror::Error;
+
 
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct DepInfo<'h> {
-    object: &'h str,
-    deps: Vec<&'h str>
+pub struct DepInfo<'h> {
+    pub(crate) object: &'h str,
+    pub(crate) deps: Vec<&'h str>
 }
 
-#[derive(Debug)]
-pub(crate) enum ParseError {
+#[derive(Error, Debug)]
+pub enum ParseError {
+    #[error("Unexpected EOF while parsing file")]
     UnexpectedEOF,
+    #[error("Line did not match expected pattern")]
     UnrecognizedLine,
+    #[error("Unexpectedly encountered a colon. Filenames may not contain colons.")]
     UnexpectedColon,
 }
 
 // non-regex based parsing
-fn extract_dependencies2(input: &str) -> Result<Vec<DepInfo>, ParseError> {
+pub(crate) fn extract_dependencies2(input: &str) -> Result<Vec<DepInfo>, ParseError> {
     let mut lines = input.lines();
     let mut dep_info = vec![];
     // `Some` if we have state due to line continuation on the previous iteration.
@@ -97,7 +102,7 @@ pub(crate) fn extract_dependencies(input: &str) -> Result<Vec<DepInfo>, ParseErr
         let obj = matches.name("object_path").expect("capture group not found");
         let deps_match = matches.name("deps").expect("capture group not found");
         let deps: Vec<&str> = deps_match.as_str().split(" \\\n").map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-        println!("obj {:?} has deps: {:?}", obj.as_str(), deps);
+        // eprintln!("obj {:?} has deps: {:?}", obj.as_str(), deps);
         let info = DepInfo {
             object: obj.as_str(),
             deps,
