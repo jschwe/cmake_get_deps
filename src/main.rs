@@ -1,7 +1,56 @@
+use std::collections::HashMap;
+use std::ffi::OsString;
 use std::io::{self, BufRead};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use anyhow::Context;
 use pico_args::Arguments;
+
+// This is a really hacked together MVP and could use some more thought.
+fn limit_to_n_with_wildcards(mut file_paths: Vec<PathBuf>, n: usize) -> Vec<PathBuf> {
+    file_paths.sort_unstable();
+    file_paths.dedup();
+    if file_paths.len() <= n {
+        return file_paths;
+    }
+    let mut map: HashMap<&Path, Vec<&PathBuf>> = HashMap::new();
+    let mut new_merged = vec![];
+    let mut un_merged = vec![];
+    let file_paths = file_paths;
+    for f in &file_paths {
+        let parent = f.parent().expect("not a file?");
+        if let Some(vec) = map.get_mut(parent) {
+            vec.push(f);
+        } else {
+            map.insert(parent, vec![f]);
+        }
+    }
+
+    for (dir, dep_files) in map {
+        let extension = dep_files.first().unwrap().extension();
+        if dep_files.iter().all(|f| f.extension() == extension) {
+            let dir_entries = dir.read_dir().expect("Read dir failed");
+            let perfect_wildcard_candidate = dir_entries.filter_map(|entry| entry.ok().map(|e| e.path().extension() == extension))
+                .all(|same_extension| same_extension);
+            if perfect_wildcard_candidate {
+                let mut file_name = OsString::from("*");
+                if let Some(extension) = extension {
+                    file_name.push(".");
+                    file_name.push(extension)
+                }
+                new_merged.push(dir.join(file_name))
+            } else {
+                un_merged.extend(dep_files)
+            }
+        }
+    }
+    let new_len =new_merged.len() + un_merged.len();
+    if new_len > n {
+        // We could try to merge more by not requiring that the wildcard matches the original results exactly.
+        eprintln!("After merge we still have {new_len} entries");
+    }
+    new_merged.extend(un_merged.iter().map(|&item| item.to_owned()));
+    new_merged
+}
 
 
 /// Inputs:
@@ -18,6 +67,9 @@ fn main() -> Result<(), anyhow::Error>{
     let mut args = Arguments::from_env();
     let project_root: Option<PathBuf> = args.opt_value_from_str("--project-root")
         .context("Failed to parse argument")?;
+    // Attempt to reduce the amount of paths with wildcards to below the passed number.
+    let opt_wildcard_merge_limit: Option<usize> = args.opt_value_from_str("--reduce-with-wildcards")
+        .context("Invalid Value passed")?;
     // Todo: Refactor to use path / pathbuf / osstr consistently
     let mut prefix = project_root.expect("--project-root is currently a required parameter").to_str().unwrap().to_string();
     prefix.push('/');
@@ -45,8 +97,13 @@ fn main() -> Result<(), anyhow::Error>{
     eprintln!("Finished parsing all input files");
     all_deps.sort_unstable();
     all_deps.dedup();
+    if let Some(limit) = opt_wildcard_merge_limit {
+        let p_deps = all_deps.iter().map(PathBuf::from).collect();
+        let merged = limit_to_n_with_wildcards(p_deps, limit);
+        all_deps = merged.iter().map(|p| p.to_str().unwrap().to_string()).collect();
+    }
     for dep in all_deps {
-        println!("{dep}");
+        println!("{dep:?}");
     }
     Ok(())
 }
