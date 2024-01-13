@@ -70,6 +70,8 @@ fn main() -> Result<(), anyhow::Error>{
     // Attempt to reduce the amount of paths with wildcards to below the passed number.
     let opt_wildcard_merge_limit: Option<usize> = args.opt_value_from_str("--reduce-with-wildcards")
         .context("Invalid Value passed")?;
+    let relative_base_dir: PathBuf = args.opt_value_from_str("--relative-to")?
+        .expect("--relative-to is currently a required parameter");
     // Todo: Refactor to use path / pathbuf / osstr consistently
     let mut prefix = project_root.expect("--project-root is currently a required parameter").to_str().unwrap().to_string();
     prefix.push('/');
@@ -78,8 +80,13 @@ fn main() -> Result<(), anyhow::Error>{
     let filter_fn = |path: &str| -> Option<String> {
         // relative path: assume it is relative to the cwd for now.
         if !path.starts_with("/") {
-            eprintln!("Relative path {:?} encountered...", path);
-            return Some(path.into());
+            let rel_path = PathBuf::from(path);
+            assert!(rel_path.is_relative());
+            let abs_path = relative_base_dir.join(rel_path);
+            let abs_path = abs_path.canonicalize().expect("Failed to canonicalize");
+            assert!(abs_path.is_file());
+            let stripped = abs_path.strip_prefix(&prefix).expect("Relative path could not be resolved inside project-root");
+            return Some(stripped.to_str().unwrap().to_string());
         }
         if let Some(stripped) = path.strip_prefix(&prefix) {
             Some(stripped.into())
