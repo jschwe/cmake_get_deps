@@ -95,19 +95,26 @@ fn main() -> Result<(), anyhow::Error>{
         }
     };
     let stdin = io::stdin().lock();
+    let mut count = 0;
     for arg in stdin.lines() {
         let filename = arg.unwrap();
         eprintln!("Parsing file: {filename}");
         let deps = cmake_get_deps::get_deps_from_cmake_depends_file(&filename, &filter_fn)?;
         all_deps.extend(deps);
+        count += 1;
+    }
+    if count == 0 {
+        anyhow::bail!("No input files received on stdin")
     }
     eprintln!("Finished parsing all input files");
     all_deps.sort_unstable();
     all_deps.dedup();
+    eprintln!("Depends on {} files", all_deps.len());
     if let Some(limit) = opt_wildcard_merge_limit {
         let p_deps = all_deps.iter().map(PathBuf::from).collect();
         let merged = limit_to_n_with_wildcards(p_deps, limit);
         all_deps = merged.iter().map(|p| p.to_str().unwrap().to_string()).collect();
+        eprintln!("Reduced path count to {}", all_deps.len());
     }
     for dep in all_deps {
         println!("{dep:?}");
