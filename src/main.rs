@@ -29,7 +29,11 @@ fn limit_to_n_with_wildcards(mut file_paths: Vec<PathBuf>, n: usize) -> Vec<Path
         let extension = dep_files.first().unwrap().extension();
         if dep_files.iter().all(|f| f.extension() == extension) {
             let dir_entries = dir.read_dir().expect("Read dir failed");
-            let perfect_wildcard_candidate = dir_entries.filter_map(|entry| entry.ok().map(|e| e.path().extension() == extension))
+            let perfect_wildcard_candidate = dir_entries
+                .filter_map(|entry| entry.ok())
+                // exclude directories
+                .filter(|e| e.file_type().is_ok_and(|f| f.is_file()))
+                .map(|e| e.path().extension() == extension)
                 .all(|same_extension| same_extension);
             if perfect_wildcard_candidate {
                 let mut file_name = OsString::from("*");
